@@ -23,11 +23,12 @@ import subprocess
 import signal
 import time
 from mpi4py import MPI
+import socket
 
 class MadrasEnv(TorcsEnv):
     """Definition of the Gym Madras Env."""
     def __init__(self, vision=False, throttle=True,
-                 gear_change=False, port=3002, pid_assist=False,
+                 gear_change=False, port=60934, pid_assist=False,
                  CLIENT_MAX_STEPS=np.inf,visualise=True):
         """Init Method."""
         self.pid_assist = pid_assist
@@ -60,21 +61,25 @@ class MadrasEnv(TorcsEnv):
         self.torcs_proc = None
         self.start_torcs_process()
         
+    def get_free_udp_port(self):
+        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udp.bind(('', 0))
+        addr, port = udp.getsockname()
+        udp.close()
+        return port
 
     def start_torcs_process(self):
         if self.torcs_proc is not None:
             os.killpg(os.getpgid(self.torcs_proc.pid), signal.SIGKILL)
             time.sleep(0.5)
             self.torcs_proc = None
+
+        self.port = self.get_free_udp_port()
         window_title = str(self.port)
         command = None
         rank = MPI.COMM_WORLD.Get_rank()
 
-        script = """
-        netstat -a | grep $port >> /dev/null
-        if [ $? -gt 0 ]; then
-            quit=1
-        """
+        
 
         if self.visualise:
             command = 'export TORCS_PORT={} && vglrun torcs -title {}'.format(window_title, self.port)
@@ -84,8 +89,8 @@ class MadrasEnv(TorcsEnv):
             command += ' -vision'
         self.torcs_proc = subprocess.Popen([command], shell=True, preexec_fn=os.setsid)
         time.sleep(0.5)
-        if self.visualise:
-            os.system('sh autostart.sh {}'.format(window_title))
+        #if self.visualise:
+        #    os.system('sh autostart.sh {}'.format(window_title))
         time.sleep(0.5)
 
    
